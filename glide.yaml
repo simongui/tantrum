@@ -1,0 +1,13 @@
+package: github.com/simongui/tantrum
+import:
+- package: gopkg.in/alecthomas/kingpin.v2
+  version: ~2.2.3
+- package: github.com/gizak/termui
+- package: github.com/mattn/go-runewidth
+  version: ~0.0.1
+- package: github.com/wcharczuk/go-chart
+  version: ~2.0.0-rc.2
+- package: golang.org/x/image
+  subpackages:
+  - draw
+- package: github.com/dlion/goImgur
