@@ -123,6 +123,8 @@ func parseResults(results string) chart.ContinuousSeries {
 		}
 	}
 
+	fmt.Println(lines[len(lines)-4])
+
 	series := chart.ContinuousSeries{
 		Style: chart.Style{
 			Show:        true,              //note; if we set ANY other properties, we must set this to true.
