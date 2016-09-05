@@ -57,8 +57,7 @@ func main() {
 			fmt.Println(err)
 		}
 
-		s := parseResults(results)
-		s.Name = name
+		s := parseResults(name, results)
 		s.Style.StrokeColor = colors[index]
 		series = append(series, s)
 
@@ -95,7 +94,7 @@ func runBenchmark(host string, port string) (string, error) {
 	return string(output), err
 }
 
-func parseResults(results string) chart.ContinuousSeries {
+func parseResults(name string, results string) chart.ContinuousSeries {
 	startResults := false
 	endResults := false
 	var xResults []float64
@@ -123,8 +122,8 @@ func parseResults(results string) chart.ContinuousSeries {
 		}
 	}
 
-	fmt.Println(lines[len(lines)-5])
-	fmt.Println(lines[len(lines)-4])
+	nameString := fmt.Sprintf("%s max: %s at %s", name, lines[len(lines)-5], lines[len(lines)-4])
+	fmt.Println(nameString)
 
 	series := chart.ContinuousSeries{
 		Style: chart.Style{
@@ -133,7 +132,7 @@ func parseResults(results string) chart.ContinuousSeries {
 			// FillColor:   drawing.ColorBlue.WithAlpha(64), // will supercede defaults
 			StrokeDashArray: []float64{5.0, 5.0},
 		},
-		Name:    "redis",
+		Name:    nameString,
 		XValues: xResults,
 		YValues: yResults,
 	}
