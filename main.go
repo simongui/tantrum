@@ -50,8 +50,6 @@ func main() {
 		host := hostParts[0+offset]
 		port := hostParts[1+offset]
 
-		fmt.Printf("Sleeping for 5 seconds\n")
-		time.Sleep(time.Second * 5)
 		fmt.Printf("Running benchmark against %s on %s:%s\n", name, host, port)
 
 		results, err := runBenchmark(host, port)
@@ -63,6 +61,11 @@ func main() {
 		s.Name = name
 		s.Style.StrokeColor = colors[index]
 		series = append(series, s)
+
+		if len(addresses) > 1 && index < len(addresses)-1 {
+			fmt.Printf("Sleeping between runs for 5 seconds\n")
+			time.Sleep(time.Second * 5)
+		}
 	}
 	chartResults(series)
 	url, err := postToImgur("results.png")
