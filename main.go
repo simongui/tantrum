@@ -76,7 +76,7 @@ func runBenchmark(host string, port string) (string, error) {
 		"-t",
 		"set",
 		"-n",
-		"1000000",
+		"10000000",
 		"-P",
 		"128",
 		"-c",
