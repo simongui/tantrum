@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dlion/goImgur"
 	chart "github.com/wcharczuk/go-chart"
@@ -48,6 +49,11 @@ func main() {
 		}
 		host := hostParts[0+offset]
 		port := hostParts[1+offset]
+
+		fmt.Printf("Sleeping for 5 seconds\n")
+		time.Sleep(time.Second * 5)
+		fmt.Printf("Running benchmark against %s on %s:%s\n", name, host, port)
+
 		results, err := runBenchmark(host, port)
 		if err != nil {
 			fmt.Println(err)

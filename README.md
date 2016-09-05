@@ -7,6 +7,11 @@ Tantrum is a Redis benchmarking orchestration tool. It can benchmark against mul
 ```
 make
 ./tantrum --hosts=redis:localhost:6379,fastlane:localhost:6380
+Sleeping for 5 seconds
+Running benchmark against redis on localhost:6379
+Sleeping for 5 seconds
+Running benchmark against fastlane on localhost:6380
+http://i.imgur.com/8fmU41v.png
 ```
 
 <img src="results.png"/>
