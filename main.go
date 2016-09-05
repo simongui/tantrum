@@ -130,7 +130,7 @@ func parseResults(results string) chart.ContinuousSeries {
 			Show:        true,              //note; if we set ANY other properties, we must set this to true.
 			StrokeColor: drawing.ColorBlue, // will supercede defaults
 			// FillColor:   drawing.ColorBlue.WithAlpha(64), // will supercede defaults
-			// StrokeDashArray: []float64{5.0, 5.0},
+			StrokeDashArray: []float64{5.0, 5.0},
 		},
 		Name:    "redis",
 		XValues: xResults,
