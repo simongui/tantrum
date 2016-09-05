@@ -123,6 +123,7 @@ func parseResults(results string) chart.ContinuousSeries {
 		}
 	}
 
+	fmt.Println(lines[len(lines)-5])
 	fmt.Println(lines[len(lines)-4])
 
 	series := chart.ContinuousSeries{
