@@ -22,10 +22,14 @@ type result struct {
 }
 
 var (
-	verbose = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
-	hosts   = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Required().String()
-	image   = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.png").String()
-	colors  = []drawing.Color{
+	verbose     = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
+	hosts       = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Short('h').Required().String()
+	image       = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.png").Short('i').String()
+	requests    = kingpin.Flag("requests", "Number of total requests.").Short('r').Default("10000000").Uint32()
+	connections = kingpin.Flag("connections", "Number of Redis client connections.").Short('c').Default("128").Uint16()
+	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Short('p').Default("128").Uint16()
+
+	colors = []drawing.Color{
 		drawing.ColorBlue,
 		drawing.ColorRed,
 	}
@@ -84,11 +88,11 @@ func runBenchmark(host string, port string) (string, error) {
 		"-t",
 		"set",
 		"-n",
-		"10000000",
-		"-P",
-		"128",
+		strconv.FormatUint(uint64(*requests), 10),
 		"-c",
-		"128")
+		strconv.FormatUint(uint64(*connections), 10),
+		"-P",
+		strconv.FormatUint(uint64(*pipelined), 10))
 
 	output, err := cmd.CombinedOutput()
 	return string(output), err
