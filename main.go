@@ -103,6 +103,7 @@ func parseResults(name string, results string) chart.ContinuousSeries {
 	endResults := false
 	var xResults []float64
 	var yResults []float64
+	var lastYResult float64
 
 	lines := strings.Split(results, "\n")
 	for i := 0; i < len(lines)-4; i++ {
@@ -123,8 +124,12 @@ func parseResults(name string, results string) chart.ContinuousSeries {
 
 			xResults = append(xResults, percentile)
 			yResults = append(yResults, latency)
+			lastYResult = latency
 		}
 	}
+
+	xResults = append(xResults, 101.0)
+	yResults = append(yResults, lastYResult)
 
 	nameString := fmt.Sprintf("%s max: %s at %s", name, lines[len(lines)-5], lines[len(lines)-4])
 	fmt.Println(nameString)
