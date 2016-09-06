@@ -28,10 +28,12 @@ var (
 	requests    = kingpin.Flag("requests", "Number of total requests.").Short('r').Default("10000000").Uint32()
 	connections = kingpin.Flag("connections", "Number of Redis client connections.").Short('c').Default("128").Uint16()
 	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Short('p').Default("128").Uint16()
+	passes      = kingpin.Flag("passes", "Number of passes to run a benchmark to eliminate anomalies.").Default("1").Uint16()
 
 	colors = []drawing.Color{
 		drawing.ColorBlue,
 		drawing.ColorRed,
+		drawing.ColorGreen,
 	}
 )
 
@@ -54,6 +56,10 @@ func main() {
 		host := hostParts[0+offset]
 		port := hostParts[1+offset]
 
+		// for pass := uint16(0); pass < *passes; pass++ {
+		//
+		// }
+		// fmt.Printf("Running benchmark pass %d against %s on %s:%s\n", pass, name, host, port)
 		fmt.Printf("Running benchmark against %s on %s:%s\n", name, host, port)
 
 		results, err := runBenchmark(host, port)
@@ -75,7 +81,7 @@ func main() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println(url)
+	fmt.Printf("![](%s)\n", url)
 }
 
 func runBenchmark(host string, port string) (string, error) {
