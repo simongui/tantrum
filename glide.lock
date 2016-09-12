@@ -1,20 +1,61 @@
-hash: ae38623929b880e6bee692950dba207ba1372411f0c7f8defa7e89332c7ed254
-updated: 2016-09-12T01:58:09.631921246-04:00
+hash: 647ce38ad6a45b8b8a704e1deadcc96a3aa781b01777443832fff681a37c602b
+updated: 2016-09-12T02:25:17.298596587-04:00
 imports:
+- name: bitbucket.org/zombiezen/gopdf
+  version: 1c63dc69751bc45441c2ce1f56b631c55294b4d5
+  subpackages:
+  - pdf
 - name: github.com/ajstarks/svgo
   version: 672fe547df4e49efc6db67a74391368bcb149b37
+- name: github.com/alecthomas/template
+  version: a0175ee3bccc567396460bf5acd36800cb10c49c
+  subpackages:
+  - parse
+- name: github.com/alecthomas/units
+  version: 2efee857e7cfd4f3d0138cc3cbb1b4966962b93a
 - name: github.com/dlion/goImgur
   version: 132b780dc8316aac23570f843a4deee9803358fb
 - name: github.com/gizak/termui
   version: 23b25db08316d51303b96a02edebae1649136565
+- name: github.com/golang/freetype
+  version: 38b4c392adc5eed94207994c4848fff99f4ac234
+  subpackages:
+  - raster
+  - truetype
+- name: github.com/gonum/floats
+  version: e7dfbda930c8a40d6d1ba9107762aae3e6e47591
+- name: github.com/gonum/internal
+  version: 495c8ab446bf60264be32be6973302faac6a5695
+  subpackages:
+  - asm
 - name: github.com/gonum/plot
   version: 5d72a5b2b142ffcf1ea8775811535daebc795ca9
+  subpackages:
+  - palette
+  - plotter
+  - vg
+  - vg/draw
+  - vg/fonts
+  - vg/vgeps
+  - vg/vgimg
+  - vg/vgpdf
+  - vg/vgsvg
+- name: github.com/llgcode/draw2d
+  version: 13548be874707c45a83f9c2c282d76d671c7acf8
+  subpackages:
+  - draw2dbase
+  - draw2dimg
 - name: github.com/mattn/go-runewidth
   version: d6bea18f789704b5f83375793155289da36a3c7f
 - name: golang.org/x/image
   version: 112f99633204ef0d08331ea410378b44a4bdde9e
   subpackages:
   - draw
+  - font
+  - math/f64
+  - math/fixed
+  - tiff
+  - tiff/lzw
 - name: gopkg.in/alecthomas/kingpin.v2
   version: e9044be3ab2a8e11d4e1f418d12f0790d57e8d70
 testImports: []

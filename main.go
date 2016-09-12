@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/dlion/goImgur"
-	"github.com/wcharczuk/go-chart/drawing"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/gonum/plot"
@@ -32,13 +31,7 @@ var (
 	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Short('p').Default("128").Uint16()
 	passes      = kingpin.Flag("passes", "Number of passes to run a benchmark to eliminate anomalies.").Default("1").Uint16()
 
-	colors = []drawing.Color{
-		drawing.ColorBlue,
-		drawing.ColorRed,
-		drawing.ColorGreen,
-	}
-
-	colors2 = []color.RGBA{
+	colors = []color.RGBA{
 		color.RGBA{R: 255, G: 0, B: 0, A: 255},
 		color.RGBA{R: 0, G: 0, B: 255, A: 255},
 		color.RGBA{R: 0, G: 255, B: 0, A: 255},
@@ -64,12 +57,12 @@ func main() {
 	p.BackgroundColor = color.White
 
 	p.X.Label.Text = "percentile"
-	// p.X.Scale = plot.LogScale{}
+	p.X.Scale = plot.LogScale{}
 	p.Y.Label.Text = "latency (milliseconds)"
 	// Use a custom tick marker interface implementation with the Ticks function,
 	// that computes the default tick marks and re-labels the major ticks with commas.
 	p.Y.Tick.Marker = commaTicks{}
-	// p.Y.Scale = plot.LogScale{}
+	p.Y.Scale = plot.LogScale{}
 
 	// Draw a grid behind the data
 	p.Add(plotter.NewGrid())
@@ -109,7 +102,7 @@ func main() {
 			panic(err)
 		}
 
-		lpLine.Color = colors2[index]
+		lpLine.Color = colors[index]
 		lpLine.LineStyle.Dashes = []vg.Length{vg.Points(5), vg.Points(5)}
 		// lpPoints.Shape = shapes[index]
 		//lpPoints.Color = colors2[index]
@@ -157,8 +150,6 @@ func runBenchmark(host string, port string) (string, error) {
 }
 
 func parseResults(name string, results string) plotter.XYs {
-	fmt.Println(results)
-
 	startResults := false
 	endResults := false
 

@@ -1,0 +1,6 @@
+repo: 3eb7f450871f99a68fdbef742725ed3e236e6935
+node: 1c63dc69751bc45441c2ce1f56b631c55294b4d5
+branch: default
+latesttag: go.weekly.2012-02-22
+latesttagdistance: 18
+changessincelatesttag: 19
