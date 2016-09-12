@@ -57,12 +57,12 @@ func main() {
 	p.BackgroundColor = color.White
 
 	p.X.Label.Text = "percentile"
-	p.X.Scale = plot.LogScale{}
+	// p.X.Scale = plot.LogScale{}
 	p.Y.Label.Text = "latency (milliseconds)"
 	// Use a custom tick marker interface implementation with the Ticks function,
 	// that computes the default tick marks and re-labels the major ticks with commas.
 	p.Y.Tick.Marker = commaTicks{}
-	p.Y.Scale = plot.LogScale{}
+	// p.Y.Scale = plot.LogScale{}
 
 	// Draw a grid behind the data
 	p.Add(plotter.NewGrid())
@@ -153,6 +153,7 @@ func parseResults(name string, results string) plotter.XYs {
 	startResults := false
 	endResults := false
 
+	fmt.Println(results)
 	lines := strings.Split(results, "\n")
 	points := make(plotter.XYs, len(lines)-4)
 
