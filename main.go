@@ -1,19 +1,21 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"image/color"
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dlion/goImgur"
-	chart "github.com/wcharczuk/go-chart"
 	"github.com/wcharczuk/go-chart/drawing"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
+
+	"github.com/gonum/plot"
+	"github.com/gonum/plot/plotter"
+	"github.com/gonum/plot/vg"
+	"github.com/gonum/plot/vg/draw"
 )
 
 type result struct {
@@ -35,17 +37,51 @@ var (
 		drawing.ColorRed,
 		drawing.ColorGreen,
 	}
+
+	colors2 = []color.RGBA{
+		color.RGBA{R: 255, G: 0, B: 0, A: 255},
+		color.RGBA{R: 0, G: 0, B: 255, A: 255},
+		color.RGBA{R: 0, G: 255, B: 0, A: 255},
+		color.RGBA{R: 0, G: 0, B: 0, A: 255},
+	}
+
+	shapes = []draw.GlyphDrawer{
+		draw.SquareGlyph{},
+		draw.CircleGlyph{},
+		draw.CrossGlyph{},
+		draw.PyramidGlyph{},
+	}
 )
 
 func main() {
 	kingpin.Parse()
 
-	var series []chart.Series
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+	p.Title.Text = fmt.Sprintf("connections: %d, pipelined: %d", *connections, *pipelined)
+	p.BackgroundColor = color.White
+
+	p.X.Label.Text = "percentile"
+	// p.X.Scale = plot.LogScale{}
+	p.Y.Label.Text = "latency (milliseconds)"
+	// Use a custom tick marker interface implementation with the Ticks function,
+	// that computes the default tick marks and re-labels the major ticks with commas.
+	p.Y.Tick.Marker = commaTicks{}
+	// p.Y.Scale = plot.LogScale{}
+
+	// Draw a grid behind the data
+	p.Add(plotter.NewGrid())
+
+	// var series []chart.Series
 	addresses := strings.Split(*hosts, ",")
 
 	for index, address := range addresses {
 		var offset = 0
 		var name string
+		var results string
+
 		hostParts := strings.Split(address, ":")
 		if len(hostParts) > 2 {
 			offset = 1
@@ -56,27 +92,43 @@ func main() {
 		host := hostParts[0+offset]
 		port := hostParts[1+offset]
 
-		// for pass := uint16(0); pass < *passes; pass++ {
-		//
-		// }
-		// fmt.Printf("Running benchmark pass %d against %s on %s:%s\n", pass, name, host, port)
 		fmt.Printf("Running benchmark against %s on %s:%s\n", name, host, port)
 
-		results, err := runBenchmark(host, port)
+		results, err = runBenchmark(host, port)
 		if err != nil {
 			fmt.Println(err)
 		}
 
-		s := parseResults(name, results)
-		s.Style.StrokeColor = colors[index]
-		series = append(series, s)
+		points := parseResults(name, results)
+
+		// Make a line plotter with points and set its style.
+		var lpLine *plotter.Line
+		//var lpPoints *plotter.Scatter
+		lpLine, _, err = plotter.NewLinePoints(points)
+		if err != nil {
+			panic(err)
+		}
+
+		lpLine.Color = colors2[index]
+		lpLine.LineStyle.Dashes = []vg.Length{vg.Points(5), vg.Points(5)}
+		// lpPoints.Shape = shapes[index]
+		//lpPoints.Color = colors2[index]
+
+		// Add the plotters to the plot, with a legend entry for each
+		p.Add(lpLine)
+		p.Legend.Add(name, lpLine)
 
 		if len(addresses) > 1 && index < len(addresses)-1 {
 			fmt.Printf("Sleeping between runs for 5 seconds\n")
-			time.Sleep(time.Second * 5)
+			//time.Sleep(time.Second * 5)
 		}
 	}
-	chartResults(series)
+
+	// Save the plot to a PNG file.
+	if err = p.Save(8*vg.Inch, 4*vg.Inch, "results.png"); err != nil {
+		panic(err)
+	}
+
 	url, err := postToImgur("results.png")
 	if err != nil {
 		fmt.Println(err)
@@ -104,14 +156,15 @@ func runBenchmark(host string, port string) (string, error) {
 	return string(output), err
 }
 
-func parseResults(name string, results string) chart.ContinuousSeries {
+func parseResults(name string, results string) plotter.XYs {
+	fmt.Println(results)
+
 	startResults := false
 	endResults := false
-	var xResults []float64
-	var yResults []float64
-	var lastYResult float64
 
 	lines := strings.Split(results, "\n")
+	points := make(plotter.XYs, len(lines)-4)
+
 	for i := 0; i < len(lines)-4; i++ {
 		line := lines[i]
 		if line == "" && startResults == false {
@@ -128,106 +181,15 @@ func parseResults(name string, results string) chart.ContinuousSeries {
 			percentile, _ := strconv.ParseFloat(percentileString, 64)
 			latency, _ := strconv.ParseFloat(latencyStringParts[1], 64)
 
-			xResults = append(xResults, percentile)
-			yResults = append(yResults, latency)
-			lastYResult = latency
+			points[i].X = percentile
+			points[i].Y = latency
 		}
 	}
-
-	xResults = append(xResults, 101.0)
-	yResults = append(yResults, lastYResult)
 
 	nameString := fmt.Sprintf("%s max: %s at %s", name, lines[len(lines)-5], lines[len(lines)-4])
 	fmt.Println(nameString)
 
-	series := chart.ContinuousSeries{
-		Style: chart.Style{
-			Show:        true,              //note; if we set ANY other properties, we must set this to true.
-			StrokeColor: drawing.ColorBlue, // will supercede defaults
-			// FillColor:   drawing.ColorBlue.WithAlpha(64), // will supercede defaults
-			StrokeDashArray: []float64{5.0, 5.0},
-		},
-		Name:    nameString,
-		XValues: xResults,
-		YValues: yResults,
-	}
-	return series
-}
-
-func chartResults(series []chart.Series) {
-	graph := chart.Chart{
-		XAxis: chart.XAxis{
-			Name:      "Percentile",
-			NameStyle: chart.StyleShow(),
-			Style: chart.Style{
-				Show:     true,
-				FontSize: 12,
-			},
-		},
-		YAxis: chart.YAxis{
-			Name:      "Latency (milliseconds)",
-			NameStyle: chart.StyleShow(),
-			Style: chart.Style{
-				Show:     true,
-				FontSize: 12,
-			},
-		},
-		Background: chart.Style{
-			Padding: chart.Box{
-				Top:    20,
-				Left:   20,
-				Right:  20,
-				Bottom: 20,
-			},
-			FillColor: drawing.ColorFromHex("efefef"),
-		},
-		Canvas: chart.Style{
-			FillColor:   drawing.ColorFromHex("efefef"),
-			StrokeColor: drawing.ColorFromHex("efefef"),
-		},
-		Series: series,
-		// Series: []chart.Series{
-		// 	chart.ContinuousSeries{
-		// 		Style: chart.Style{
-		// 			Show:        true,              //note; if we set ANY other properties, we must set this to true.
-		// 			StrokeColor: drawing.ColorBlue, // will supercede defaults
-		// 			// FillColor:   drawing.ColorBlue.WithAlpha(64), // will supercede defaults
-		// 			// StrokeDashArray: []float64{5.0, 5.0},
-		// 		},
-		// 		Name:    "redis",
-		// 		XValues: []float64{50, 75, 90, 95, 99, 100},
-		// 		YValues: []float64{1.0, 5.0, 10.0, 15.0, 50.0, 100.0},
-		// 	},
-		// 	chart.ContinuousSeries{
-		// 		Style: chart.Style{
-		// 			Show:        true,             //note; if we set ANY other properties, we must set this to true.
-		// 			StrokeColor: drawing.ColorRed, // will supercede defaults
-		// 			// FillColor:   drawing.ColorBlue.WithAlpha(64), // will supercede defaults
-		// 			// StrokeDashArray: []float64{5.0, 5.0},
-		// 		},
-		// 		Name:    "fastlane",
-		// 		XValues: []float64{50, 75, 90, 95, 99, 100},
-		// 		YValues: []float64{1.0, 5.0, 10.0, 150.0, 500.0, 1000.0},
-		// 	},
-		// },
-	}
-
-	//note we have to do this as a separate step because we need a reference to graph
-	graph.Elements = []chart.Renderable{
-		chart.Legend(&graph),
-	}
-
-	// graph.Render(chart.PNG, res)
-	buffer := bytes.NewBuffer([]byte{})
-	err := graph.Render(chart.PNG, buffer)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	err = ioutil.WriteFile(*image, buffer.Bytes(), 0644)
-	if err != nil {
-		fmt.Println(err)
-	}
+	return points
 }
 
 func postToImgur(filename string) (string, error) {
@@ -254,4 +216,39 @@ func postToImgur(filename string) (string, error) {
 		return "", err
 	}
 	return link, nil
+}
+
+type commaTicks struct{}
+
+// Ticks computes the default tick marks, but inserts commas
+// into the labels for the major tick marks.
+func (commaTicks) Ticks(min, max float64) []plot.Tick {
+	tks := plot.DefaultTicks{}.Ticks(min, max)
+	for i, t := range tks {
+		if t.Label == "" { // Skip minor ticks, they are fine.
+			continue
+		}
+		tks[i].Label = addCommas(t.Label)
+	}
+	return tks
+}
+
+// AddCommas adds commas after every 3 characters from right to left.
+// NOTE: This function is a quick hack, it doesn't work with decimal
+// points, and may have a bunch of other problems.
+func addCommas(s string) string {
+	rev := ""
+	n := 0
+	for i := len(s) - 1; i >= 0; i-- {
+		rev += string(s[i])
+		n++
+		if n%3 == 0 {
+			rev += ","
+		}
+	}
+	s = ""
+	for i := len(rev) - 1; i >= 0; i-- {
+		s += string(rev[i])
+	}
+	return s
 }
