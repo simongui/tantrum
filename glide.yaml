@@ -12,3 +12,4 @@ import:
 - package: github.com/gonum/plot
 - package: github.com/ajstarks/svgo
 - package: github.com/golang/freetype
+- package: github.com/disintegration/imaging

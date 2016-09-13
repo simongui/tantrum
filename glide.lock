@@ -1,5 +1,5 @@
-hash: 647ce38ad6a45b8b8a704e1deadcc96a3aa781b01777443832fff681a37c602b
-updated: 2016-09-12T02:25:17.298596587-04:00
+hash: 5f09672f65724004a00104bea362b36f7c0f29ba51951b9d4d89415263e661f6
+updated: 2016-09-13T11:02:46.068918498-04:00
 imports:
 - name: bitbucket.org/zombiezen/gopdf
   version: 1c63dc69751bc45441c2ce1f56b631c55294b4d5
@@ -13,6 +13,8 @@ imports:
   - parse
 - name: github.com/alecthomas/units
   version: 2efee857e7cfd4f3d0138cc3cbb1b4966962b93a
+- name: github.com/disintegration/imaging
+  version: 5b7e22645c93e3f3911b36b7d66bf8799f3eddfd
 - name: github.com/dlion/goImgur
   version: 132b780dc8316aac23570f843a4deee9803358fb
 - name: github.com/gizak/termui
@@ -33,6 +35,7 @@ imports:
   subpackages:
   - palette
   - plotter
+  - plotutil
   - vg
   - vg/draw
   - vg/fonts
