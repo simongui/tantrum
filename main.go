@@ -7,11 +7,15 @@ import (
 	"image/color"
 	"math"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/disintegration/imaging"
 	"github.com/dlion/goImgur"
+	"github.com/garyburd/redigo/redis"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/gonum/plot"
@@ -30,19 +34,12 @@ type result struct {
 
 var (
 	verbose     = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
-	hosts       = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Short('h').Required().String()
-	image       = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.jpg").Short('i').String()
-	requests    = kingpin.Flag("requests", "Number of total requests.").Short('r').Default("10000000").Uint32()
-	connections = kingpin.Flag("connections", "Number of Redis client connections.").Short('c').Default("128").Uint16()
-	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Short('p').Default("128").Uint16()
-	passes      = kingpin.Flag("passes", "Number of passes to run a benchmark to eliminate anomalies.").Default("1").Uint16()
-
-	colors = []color.RGBA{
-		color.RGBA{R: 255, G: 0, B: 0, A: 255},
-		color.RGBA{R: 0, G: 0, B: 255, A: 255},
-		color.RGBA{R: 0, G: 255, B: 0, A: 255},
-		color.RGBA{R: 0, G: 0, B: 0, A: 255},
-	}
+	hosts       = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Required().String()
+	image       = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.jpg").String()
+	requests    = kingpin.Flag("requests", "Number of total requests.").Default("10000000").Uint32()
+	connections = kingpin.Flag("connections", "Number of Redis client connections.").Default("128").Uint16()
+	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Default("128").Uint16()
+	sleep       = kingpin.Flag("sleep", "Duration in seconds to sleep between benchmarks.").Default("0").Uint16()
 
 	shapes = []draw.GlyphDrawer{
 		draw.SquareGlyph{},
@@ -50,10 +47,52 @@ var (
 		draw.CrossGlyph{},
 		draw.PyramidGlyph{},
 	}
+
+	waitGroup sync.WaitGroup
 )
 
 func main() {
 	kingpin.Parse()
+
+	pools = make(map[int64]*redis.Pool)
+
+	startHTTPServers()
+
+	waitGroup.Add(1)
+	waitGroup.Wait()
+}
+
+func startHTTPServers() {
+	httpPort := 8080
+	addresses := strings.Split(*hosts, ",")
+
+	for _, address := range addresses {
+		httpPort++
+		var offset = 0
+		var name string
+
+		hostParts := strings.Split(address, ":")
+		if len(hostParts) > 2 {
+			offset = 1
+			name = hostParts[0]
+		} else {
+			name = hostParts[0] + " " + hostParts[1]
+		}
+		host := hostParts[0+offset]
+		port := hostParts[1+offset]
+
+		listenAddress := fmt.Sprintf("%s:%s", host, port)
+		if *verbose {
+			fmt.Printf("starting http server for %s listening on %d\n", name, httpPort)
+		}
+		go startHTTPServer(listenAddress, int(*connections), httpPort)
+	}
+}
+
+func benchmark() {
+	//kingpin.Parse()
+
+	start := time.Now()
 
 	var results []result
 	addresses := strings.Split(*hosts, ",")
@@ -72,22 +111,25 @@ func main() {
 		host := hostParts[0+offset]
 		port := hostParts[1+offset]
 
-		fmt.Printf("Running benchmark against %s on %s:%s\n", name, host, port)
+		output, err := runBenchmark(name, host, port)
 
-		output, err := runBenchmark(host, port)
 		if err != nil {
 			fmt.Println(err)
 		} else {
 
+			if *verbose {
+				fmt.Println(string(output))
+			}
+
 			r := parseResults(name, output)
 			results = append(results, r)
 
-			if len(addresses) > 1 && index < len(addresses)-1 {
-				fmt.Printf("Sleeping between runs for 5 seconds\n")
-				//time.Sleep(time.Second * 5)
+			if len(addresses) > 1 && index < len(addresses)-1 && *sleep > 0 {
+				time.Sleep(time.Duration(*sleep) * time.Second)
 			}
 		}
 	}
+	elapsed := time.Since(start)
 
 	generateLatencyDistributionGraph(results)
 	generateThroughputGraph(results)
@@ -98,10 +140,18 @@ func main() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Printf("![](%s)\n", url)
+	fmt.Printf("%d/%d took %s: ![](%s)\n", *connections, *pipelined, elapsed, url)
 }
 
-func runBenchmark(host string, port string) (string, error) {
+func runBenchmark(name string, host string, port string) (string, error) {
+	requestsArg := strconv.FormatUint(uint64(*requests), 10)
+	connectionsArg := strconv.FormatUint(uint64(*connections), 10)
+	pipelinedArg := strconv.FormatUint(uint64(*pipelined), 10)
+
+	if *verbose {
+		fmt.Printf("Running benchmark for %s on %s:%s\n\tRequests:\t%s\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, port, requestsArg, connectionsArg, pipelinedArg)
+	}
+
 	cmd := exec.Command(
 		"./redis-benchmark",
 		"-h",
@@ -111,11 +161,13 @@ func runBenchmark(host string, port string) (string, error) {
 		"-t",
 		"set",
 		"-n",
-		strconv.FormatUint(uint64(*requests), 10),
+		requestsArg,
+		"-r",
+		"1000000000",
 		"-c",
-		strconv.FormatUint(uint64(*connections), 10),
+		connectionsArg,
 		"-P",
-		strconv.FormatUint(uint64(*pipelined), 10))
+		pipelinedArg)
 
 	output, err := cmd.Output()
 	return string(output), err
@@ -125,9 +177,11 @@ func parseResults(name string, results string) result {
 	startResults := false
 	endResults := false
 	var lastResult float64
+	// var xPoints []float64
+	// var yPoints []float64
+	entries := make(map[float64]float64)
 
 	lines := strings.Split(results, "\n")
-	points := make(plotter.XYs, len(lines)-4)
 	var r result
 
 	for i := 0; i < len(lines)-4; i++ {
@@ -147,12 +201,28 @@ func parseResults(name string, results string) result {
 			latency, _ := strconv.ParseFloat(latencyStringParts[1], 64)
 			lastResult = latency
 
-			points[i].X = percentile
-			points[i].Y = latency
+			if percentile >= 1 && latency >= 1 {
+				// xPoints = append(xPoints, percentile)
+				// yPoints = append(yPoints, latency)
+				entries[percentile] = latency
+			}
 		}
 	}
 
-	// nameString := fmt.Sprintf("%s max: %s at %s", name, lines[len(lines)-5], lines[len(lines)-4])
+	points := make(plotter.XYs, len(entries))
+
+	var keys []float64
+	for k := range entries {
+		keys = append(keys, k)
+	}
+	sort.Float64s(keys)
+
+	for i, k := range keys {
+		points[i].X = k
+		points[i].Y = entries[k]
+	}
+
+	// fmt.Printf("%s\n%+v\n", results, points)
 
 	r.name = name
 	r.latencyPoints = points
@@ -170,13 +240,16 @@ func generateLatencyDistributionGraph(results []result) {
 	}
 	p.Title.Text = fmt.Sprintf("connections: %d, pipelined: %d", *connections, *pipelined)
 	p.BackgroundColor = color.White
+	p.Legend.Top = true
+	p.Legend.Left = true
 
 	p.X.Label.Text = "percentile"
-	// p.X.Scale = plot.LogScale{}
 	p.Y.Label.Text = "latency (milliseconds)"
 	// Use a custom tick marker interface implementation with the Ticks function,
 	// that computes the default tick marks and re-labels the major ticks with commas.
 	// p.Y.Tick.Marker = commaTicks{}
+
+	// p.X.Scale = plot.LogScale{}
 	// p.Y.Scale = plot.LogScale{}
 
 	// Draw a grid behind the data
@@ -191,16 +264,16 @@ func generateLatencyDistributionGraph(results []result) {
 		if err != nil {
 			panic(err)
 		}
-		lpLine.Color = colors[index]
-		lpLine.LineStyle.Dashes = []vg.Length{vg.Points(5), vg.Points(5)}
 
-		// lpPoints.Shape = shapes[index]
-		// lpPoints.Color = colors[index]
+		//lpLine.LineStyle.Dashes = []vg.Length{vg.Points(5), vg.Points(5)}
+		lpLine.Color = plotutil.Color(index)
+
+		// lpPoints.Color = plotutil.Color(index)
+		// lpPoints.Shape = plotutil.Shape(index)
 
 		// Add the plotters to the plot, with a legend entry for each
 		p.Add(lpLine)
 		p.Legend.Add(r.name, lpLine)
-
 	}
 
 	// Save the plot to a PNG file.

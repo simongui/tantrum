@@ -1,5 +1,5 @@
-hash: 5f09672f65724004a00104bea362b36f7c0f29ba51951b9d4d89415263e661f6
-updated: 2016-09-13T11:02:46.068918498-04:00
+hash: ca5acded62b6138beb77a6a3dc61a2c7104b91884a5c925b9013fd1887de769a
+updated: 2016-09-26T07:41:34.37908461-04:00
 imports:
 - name: bitbucket.org/zombiezen/gopdf
   version: 1c63dc69751bc45441c2ce1f56b631c55294b4d5
@@ -17,6 +17,8 @@ imports:
   version: 5b7e22645c93e3f3911b36b7d66bf8799f3eddfd
 - name: github.com/dlion/goImgur
   version: 132b780dc8316aac23570f843a4deee9803358fb
+- name: github.com/garyburd/redigo
+  version: 8873b2f1995f59d4bcdd2b0dc9858e2cb9bf0c13
 - name: github.com/gizak/termui
   version: 23b25db08316d51303b96a02edebae1649136565
 - name: github.com/golang/freetype
@@ -43,6 +45,16 @@ imports:
   - vg/vgimg
   - vg/vgpdf
   - vg/vgsvg
+- name: github.com/klauspost/compress
+  version: d0763f13d86e630f5d3ea9fa848a6ecc68255297
+  subpackages:
+  - flate
+  - gzip
+  - zlib
+- name: github.com/klauspost/cpuid
+  version: 09cded8978dc9e80714c4d85b0322337b0a1e5e0
+- name: github.com/klauspost/crc32
+  version: 19b0b332c9e4516a6370a0456e6182c3b5036720
 - name: github.com/llgcode/draw2d
   version: 13548be874707c45a83f9c2c282d76d671c7acf8
   subpackages:
@@ -50,9 +62,14 @@ imports:
   - draw2dimg
 - name: github.com/mattn/go-runewidth
   version: d6bea18f789704b5f83375793155289da36a3c7f
+- name: github.com/valyala/fasthttp
+  version: d42167fd04f636e20b005e9934159e95454233c7
+  subpackages:
+  - fasthttputil
 - name: golang.org/x/image
   version: 112f99633204ef0d08331ea410378b44a4bdde9e
   subpackages:
+  - bmp
   - draw
   - font
   - math/f64
