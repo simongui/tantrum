@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -38,8 +37,9 @@ var (
 	image       = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.jpg").String()
 	requests    = kingpin.Flag("requests", "Number of total requests.").Default("10000000").Uint32()
 	connections = kingpin.Flag("connections", "Number of Redis client connections.").Default("128").Uint16()
-	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Default("128").Uint16()
+	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Default("1").Uint16()
 	sleep       = kingpin.Flag("sleep", "Duration in seconds to sleep between benchmarks.").Default("0").Uint16()
+	duration    = kingpin.Flag("duration", "Duration in seconds to run benchmark stages.").Default("10").Uint16()
 
 	shapes = []draw.GlyphDrawer{
 		draw.SquareGlyph{},
@@ -48,7 +48,7 @@ var (
 		draw.PyramidGlyph{},
 	}
 
-	waitGroup sync.WaitGroup
+	httpBasePort = 8080
 )
 
 func main() {
@@ -57,14 +57,13 @@ func main() {
 	pools = make(map[int64]*redis.Pool)
 
 	startHTTPServers()
-
-	waitGroup.Add(1)
-	waitGroup.Wait()
+	time.Sleep(time.Duration(*sleep) * time.Second)
+	benchmark()
 }
 
 func startHTTPServers() {
-	httpPort := 8080
 	addresses := strings.Split(*hosts, ",")
+	httpPort := httpBasePort
 
 	for _, address := range addresses {
 		httpPort++
@@ -90,16 +89,16 @@ func startHTTPServers() {
 }
 
 func benchmark() {
-	//kingpin.Parse()
-
 	start := time.Now()
 
-	var results []result
+	httpPort := httpBasePort
+	var results []*result
 	addresses := strings.Split(*hosts, ",")
 
 	for index, address := range addresses {
 		var offset = 0
 		var name string
+		httpPort++
 
 		hostParts := strings.Split(address, ":")
 		if len(hostParts) > 2 {
@@ -109,19 +108,35 @@ func benchmark() {
 			name = hostParts[0] + " " + hostParts[1]
 		}
 		host := hostParts[0+offset]
-		port := hostParts[1+offset]
+		port, _ := strconv.ParseInt(hostParts[1+offset], 10, 32)
 
-		output, err := runBenchmark(name, host, port)
+		//output, err := runBenchmark(name, host, port)
+		throughputOutput, err := runWrkThroughputBenchmark(name, host, int(port), httpPort)
 
 		if err != nil {
 			fmt.Println(err)
+			fmt.Println(throughputOutput)
 		} else {
-
 			if *verbose {
-				fmt.Println(string(output))
+				fmt.Println(string(throughputOutput))
 			}
 
-			r := parseResults(name, output)
+		}
+		latencyOutput, err := runWrkLatencyBenchmark(name, host, int(port), httpPort)
+
+		if err != nil {
+			fmt.Println(err)
+			fmt.Println(latencyOutput)
+		} else {
+			if *verbose {
+				fmt.Println(string(latencyOutput))
+			}
+
+			// r := parseResults(name, output)
+			r := &result{}
+			r.name = name
+			parseWrkThroughputResults(name, throughputOutput, r)
+			parseWrkLatencyResults(name, latencyOutput, r)
 			results = append(results, r)
 
 			if len(addresses) > 1 && index < len(addresses)-1 && *sleep > 0 {
@@ -143,67 +158,105 @@ func benchmark() {
 	fmt.Printf("%d/%d took %s: ![](%s)\n", *connections, *pipelined, elapsed, url)
 }
 
-func runBenchmark(name string, host string, port string) (string, error) {
-	requestsArg := strconv.FormatUint(uint64(*requests), 10)
+func runWrkThroughputBenchmark(name string, host string, redisPort int, httpPort int) (string, error) {
 	connectionsArg := strconv.FormatUint(uint64(*connections), 10)
 	pipelinedArg := strconv.FormatUint(uint64(*pipelined), 10)
 
 	if *verbose {
-		fmt.Printf("Running benchmark for %s on %s:%s\n\tRequests:\t%s\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, port, requestsArg, connectionsArg, pipelinedArg)
+		fmt.Printf("Running benchmark for %s on %s:%d\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, redisPort, connectionsArg, pipelinedArg)
 	}
 
 	cmd := exec.Command(
-		"./redis-benchmark",
-		"-h",
-		host,
-		"-p",
-		port,
-		"-t",
-		"set",
-		"-n",
-		requestsArg,
-		"-r",
-		"1000000000",
-		"-c",
+		"./benchmark/wrk",
+		"--latency",
+		"--script",
+		"./benchmark/set_random.lua",
+		"--threads",
+		"4",
+		"--connections",
 		connectionsArg,
-		"-P",
+		"--duration",
+		fmt.Sprintf("%ds", *duration),
+		fmt.Sprintf("http://localhost:%d", httpPort),
+		"--",
 		pipelinedArg)
 
 	output, err := cmd.Output()
 	return string(output), err
 }
 
-func parseResults(name string, results string) result {
+func runWrkLatencyBenchmark(name string, host string, redisPort int, httpPort int) (string, error) {
+	requestsArg := strconv.FormatUint(uint64(*requests), 10)
+	connectionsArg := strconv.FormatUint(uint64(*connections), 10)
+	pipelinedArg := strconv.FormatUint(uint64(*pipelined), 10)
+
+	if *verbose {
+		fmt.Printf("Running benchmark for %s on %s:%d\n\tRequests:\t%s\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, redisPort, requestsArg, connectionsArg, pipelinedArg)
+	}
+
+	cmd := exec.Command(
+		"./benchmark/wrk2",
+		"--latency",
+		"--script",
+		"./benchmark/set_random.lua",
+		"--threads",
+		"4",
+		"--connections",
+		connectionsArg,
+		"--duration",
+		fmt.Sprintf("%ds", *duration),
+		"--rate",
+		requestsArg,
+		fmt.Sprintf("http://localhost:%d", httpPort),
+		"--",
+		pipelinedArg)
+
+	output, err := cmd.Output()
+	return string(output), err
+}
+
+func parseWrkThroughputResults(name string, results string, r *result) {
+	lines := strings.Split(results, "\n")
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if strings.HasPrefix(line, "Requests/sec:") {
+			throughputStringParts := strings.Fields(lines[i])
+			throughput, _ := strconv.ParseFloat(throughputStringParts[1], 64)
+			r.throughput = throughput
+			break
+		}
+	}
+}
+
+func parseWrkLatencyResults(name string, results string, r *result) {
+	var lastResult float64
 	startResults := false
 	endResults := false
-	var lastResult float64
-	// var xPoints []float64
-	// var yPoints []float64
+
 	entries := make(map[float64]float64)
-
 	lines := strings.Split(results, "\n")
-	var r result
 
-	for i := 0; i < len(lines)-4; i++ {
+	for i := 0; i < len(lines); i++ {
 		line := lines[i]
-		if line == "" && startResults == false {
+		if strings.HasPrefix(line, " 50.") && startResults == false {
 			startResults = true
 		} else if line == "" && startResults == true {
 			endResults = true
+			break
 		}
 
-		if startResults && !endResults && len(line) > 0 {
-			lineParts := strings.Split(line, "<=")
+		if startResults && !endResults {
+			lineParts := strings.Fields(line)
 			percentileString := strings.Split(lineParts[0], "%")[0]
-			latencyStringParts := strings.Split(lineParts[1], " ")
+			latencyString := strings.Split(lineParts[1], "ms")[0]
 
 			percentile, _ := strconv.ParseFloat(percentileString, 64)
-			latency, _ := strconv.ParseFloat(latencyStringParts[1], 64)
+			latency, _ := strconv.ParseFloat(latencyString, 64)
+
 			lastResult = latency
 
 			if percentile >= 1 && latency >= 1 {
-				// xPoints = append(xPoints, percentile)
-				// yPoints = append(yPoints, latency)
 				entries[percentile] = latency
 			}
 		}
@@ -222,67 +275,12 @@ func parseResults(name string, results string) result {
 		points[i].Y = entries[k]
 	}
 
-	// fmt.Printf("%s\n%+v\n", results, points)
-
 	r.name = name
 	r.latencyPoints = points
-	throughputStringParts := strings.Split(lines[len(lines)-4], " ")
-	r.throughput, _ = strconv.ParseFloat(throughputStringParts[0], 64)
 	r.max = lastResult
-
-	return r
 }
 
-func generateLatencyDistributionGraph(results []result) {
-	p, err := plot.New()
-	if err != nil {
-		panic(err)
-	}
-	p.Title.Text = fmt.Sprintf("connections: %d, pipelined: %d", *connections, *pipelined)
-	p.BackgroundColor = color.White
-	p.Legend.Top = true
-	p.Legend.Left = true
-
-	p.X.Label.Text = "percentile"
-	p.Y.Label.Text = "latency (milliseconds)"
-	// Use a custom tick marker interface implementation with the Ticks function,
-	// that computes the default tick marks and re-labels the major ticks with commas.
-	// p.Y.Tick.Marker = commaTicks{}
-
-	// p.X.Scale = plot.LogScale{}
-	// p.Y.Scale = plot.LogScale{}
-
-	// Draw a grid behind the data
-	p.Add(plotter.NewGrid())
-
-	for index, r := range results {
-		// Make a line plotter with points and set its style.
-		var lpLine *plotter.Line
-		// var lpPoints *plotter.Scatter
-		// lpLine, lpPoints, err = plotter.NewLinePoints(r.latencyPoints)
-		lpLine, _, err = plotter.NewLinePoints(r.latencyPoints)
-		if err != nil {
-			panic(err)
-		}
-
-		//lpLine.LineStyle.Dashes = []vg.Length{vg.Points(5), vg.Points(5)}
-		lpLine.Color = plotutil.Color(index)
-
-		// lpPoints.Color = plotutil.Color(index)
-		// lpPoints.Shape = plotutil.Shape(index)
-
-		// Add the plotters to the plot, with a legend entry for each
-		p.Add(lpLine)
-		p.Legend.Add(r.name, lpLine)
-	}
-
-	// Save the plot to a PNG file.
-	if err = p.Save(8*vg.Inch, 4*vg.Inch, "results_latency.png"); err != nil {
-		panic(err)
-	}
-}
-
-func generateThroughputGraph(results []result) {
+func generateThroughputGraph(results []*result) {
 	p, err := plot.New()
 	if err != nil {
 		panic(err)
@@ -317,7 +315,7 @@ func generateThroughputGraph(results []result) {
 	}
 }
 
-func generateMaxLatencyGraph(results []result) {
+func generateMaxLatencyGraph(results []*result) {
 	p, err := plot.New()
 	if err != nil {
 		panic(err)
@@ -348,6 +346,55 @@ func generateMaxLatencyGraph(results []result) {
 	p.NominalX("")
 
 	if err = p.Save(3.5*vg.Inch, 4*vg.Inch, "results_max.png"); err != nil {
+		panic(err)
+	}
+}
+
+func generateLatencyDistributionGraph(results []*result) {
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+	p.Title.Text = fmt.Sprintf("connections: %d, pipelined: %d", *connections, *pipelined)
+	p.BackgroundColor = color.White
+	p.Legend.Top = true
+	p.Legend.Left = true
+
+	p.X.Label.Text = "percentile"
+	p.Y.Label.Text = "latency (milliseconds)"
+	// Use a custom tick marker interface implementation with the Ticks function,
+	// that computes the default tick marks and re-labels the major ticks with commas.
+	// p.Y.Tick.Marker = commaTicks{}
+
+	// p.X.Scale = plot.LogScale{}
+	// p.Y.Scale = plot.LogScale{}
+
+	// Draw a grid behind the data
+	p.Add(plotter.NewGrid())
+
+	for index, r := range results {
+		// Make a line plotter with points and set its style.
+		var lpLine *plotter.Line
+		var lpPoints *plotter.Scatter
+		lpLine, lpPoints, err = plotter.NewLinePoints(r.latencyPoints)
+		//lpLine, _, err = plotter.NewLinePoints(r.latencyPoints)
+		if err != nil {
+			panic(err)
+		}
+
+		//lpLine.LineStyle.Dashes = []vg.Length{vg.Points(5), vg.Points(5)}
+		lpLine.Color = plotutil.Color(index)
+		lpPoints.Shape = plotutil.Shape(index)
+		// lpPoints.Color = plotutil.Color(index)
+		// lpPoints.Shape = plotutil.Shape(index)
+
+		// Add the plotters to the plot, with a legend entry for each
+		p.Add(lpLine, lpPoints)
+		p.Legend.Add(r.name, lpLine, lpPoints)
+	}
+
+	// Save the plot to a PNG file.
+	if err = p.Save(8*vg.Inch, 4*vg.Inch, "results_latency.png"); err != nil {
 		panic(err)
 	}
 }
