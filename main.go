@@ -32,10 +32,10 @@ type result struct {
 }
 
 var (
-	verbose     = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
-	hosts       = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Required().String()
-	image       = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.jpg").String()
-	requests    = kingpin.Flag("requests", "Number of total requests.").Default("10000000").Uint32()
+	verbose = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
+	hosts   = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Required().String()
+	image   = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.jpg").String()
+	// requests    = kingpin.Flag("requests", "Number of total requests.").Default("10000000").Uint32()
 	connections = kingpin.Flag("connections", "Number of Redis client connections.").Default("128").Uint16()
 	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Default("1").Uint16()
 	sleep       = kingpin.Flag("sleep", "Duration in seconds to sleep between benchmarks.").Default("0").Uint16()
@@ -110,9 +110,10 @@ func benchmark() {
 		host := hostParts[0+offset]
 		port, _ := strconv.ParseInt(hostParts[1+offset], 10, 32)
 
-		//output, err := runBenchmark(name, host, port)
-		throughputOutput, err := runWrkThroughputBenchmark(name, host, int(port), httpPort)
+		r := &result{}
+		r.name = name
 
+		throughputOutput, err := runWrkThroughputBenchmark(name, host, int(port), httpPort)
 		if err != nil {
 			fmt.Println(err)
 			fmt.Println(throughputOutput)
@@ -120,10 +121,11 @@ func benchmark() {
 			if *verbose {
 				fmt.Println(string(throughputOutput))
 			}
+			parseWrkThroughputResults(name, throughputOutput, r)
 
 		}
-		latencyOutput, err := runWrkLatencyBenchmark(name, host, int(port), httpPort)
 
+		latencyOutput, err := runWrkLatencyBenchmark(name, host, int(port), httpPort, int(r.throughput))
 		if err != nil {
 			fmt.Println(err)
 			fmt.Println(latencyOutput)
@@ -132,10 +134,6 @@ func benchmark() {
 				fmt.Println(string(latencyOutput))
 			}
 
-			// r := parseResults(name, output)
-			r := &result{}
-			r.name = name
-			parseWrkThroughputResults(name, throughputOutput, r)
 			parseWrkLatencyResults(name, latencyOutput, r)
 			results = append(results, r)
 
@@ -185,13 +183,12 @@ func runWrkThroughputBenchmark(name string, host string, redisPort int, httpPort
 	return string(output), err
 }
 
-func runWrkLatencyBenchmark(name string, host string, redisPort int, httpPort int) (string, error) {
-	requestsArg := strconv.FormatUint(uint64(*requests), 10)
+func runWrkLatencyBenchmark(name string, host string, redisPort int, httpPort int, rate int) (string, error) {
 	connectionsArg := strconv.FormatUint(uint64(*connections), 10)
 	pipelinedArg := strconv.FormatUint(uint64(*pipelined), 10)
 
 	if *verbose {
-		fmt.Printf("Running benchmark for %s on %s:%d\n\tRequests:\t%s\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, redisPort, requestsArg, connectionsArg, pipelinedArg)
+		fmt.Printf("Running benchmark for %s on %s:%d\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, redisPort, connectionsArg, pipelinedArg)
 	}
 
 	cmd := exec.Command(
@@ -206,7 +203,7 @@ func runWrkLatencyBenchmark(name string, host string, redisPort int, httpPort in
 		"--duration",
 		fmt.Sprintf("%ds", *duration),
 		"--rate",
-		requestsArg,
+		strconv.Itoa(rate),
 		fmt.Sprintf("http://localhost:%d", httpPort),
 		"--",
 		pipelinedArg)

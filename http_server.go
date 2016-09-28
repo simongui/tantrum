@@ -57,12 +57,19 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 	key := ctx.Request.Header.Peek("key")
 	value := ctx.Request.Header.Peek("value")
 
-	_, err := conn.Do("SET", key, value)
+	// _, err := conn.Send("SET", key, value)
+	err := conn.Send("SET", key, value)
 	if err != nil {
 		ctx.Response.SetStatusCode(500)
 		fmt.Println(err)
 	} else {
 		ctx.Response.SetStatusCode(200)
+	}
+	if ctx.ConnRequestNum()%uint64(*pipelined) == 0 {
+		conn.Flush()
+		for i := 0; i < int(*pipelined); i++ {
+			conn.Receive()
+		}
 	}
 	conn.Close()
 }
