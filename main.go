@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"math"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,11 +33,11 @@ type result struct {
 }
 
 var (
-	verbose = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
-	hosts   = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Required().String()
-	image   = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.jpg").String()
-	// requests    = kingpin.Flag("requests", "Number of total requests.").Default("10000000").Uint32()
-	connections = kingpin.Flag("connections", "Number of Redis client connections.").Default("128").Uint16()
+	verbose     = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
+	hosts       = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Required().String()
+	image       = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.jpg").String()
+	threads     = kingpin.Flag("threads", "Number of CPU threads to use.").Default(fmt.Sprintf("%d", runtime.NumCPU())).String()
+	connections = kingpin.Flag("connections", "Number of Redis client connections.").Default("32").Uint16()
 	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Default("1").Uint16()
 	sleep       = kingpin.Flag("sleep", "Duration in seconds to sleep between benchmarks.").Default("0").Uint16()
 	duration    = kingpin.Flag("duration", "Duration in seconds to run benchmark stages.").Default("10").Uint16()
@@ -164,22 +165,28 @@ func runWrkThroughputBenchmark(name string, host string, redisPort int, httpPort
 		fmt.Printf("Running benchmark for %s on %s:%d\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, redisPort, connectionsArg, pipelinedArg)
 	}
 
-	cmd := exec.Command(
-		"./benchmark/wrk",
+	command := "./benchmark/wrk"
+	args := []string{
 		"--latency",
 		"--script",
 		"./benchmark/set_random.lua",
 		"--threads",
-		"4",
+		*threads,
 		"--connections",
 		connectionsArg,
 		"--duration",
 		fmt.Sprintf("%ds", *duration),
 		fmt.Sprintf("http://localhost:%d", httpPort),
 		"--",
-		pipelinedArg)
+		pipelinedArg,
+	}
 
-	output, err := cmd.Output()
+	if *verbose {
+		fmt.Println(command + " " + strings.Join(args, " "))
+	}
+	cmd := exec.Command(command, args...)
+
+	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
 
@@ -191,13 +198,13 @@ func runWrkLatencyBenchmark(name string, host string, redisPort int, httpPort in
 		fmt.Printf("Running benchmark for %s on %s:%d\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, redisPort, connectionsArg, pipelinedArg)
 	}
 
-	cmd := exec.Command(
-		"./benchmark/wrk2",
+	command := "./benchmark/wrk2"
+	args := []string{
 		"--latency",
 		"--script",
 		"./benchmark/set_random.lua",
 		"--threads",
-		"4",
+		*threads,
 		"--connections",
 		connectionsArg,
 		"--duration",
@@ -206,9 +213,14 @@ func runWrkLatencyBenchmark(name string, host string, redisPort int, httpPort in
 		strconv.Itoa(rate),
 		fmt.Sprintf("http://localhost:%d", httpPort),
 		"--",
-		pipelinedArg)
+		pipelinedArg}
 
-	output, err := cmd.Output()
+	if *verbose {
+		fmt.Println(command + " " + strings.Join(args, " "))
+	}
+	cmd := exec.Command(command, args...)
+
+	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
 
