@@ -3,6 +3,13 @@
 # Tantrum
 Tantrum is a Redis benchmarking orchestration tool. It can benchmark against multiple Redis servers and graph results and returns an imgur link to the graph.
 
+# macOS Requirements (El Capitan and Sierra)
+```
+xcode-select --install
+brew install openssl
+ln -s /usr/local/opt/openssl/include/openssl /usr/local/include
+```
+
 # Usage
 ```
 make

@@ -24,17 +24,15 @@ $(redispath)/src/redis-benchmark:
 	cd $(redispath);make
 	cp $(redispath)/src/redis-benchmark .
 
-$(wrkpath)/wrk:
-	git clone https://github.com/wg/wrk.git $(wrkpath)
+benchmark/wrk:
+	if [ ! -d "$(wrkpath)" ]; then git clone https://github.com/wg/wrk.git $(wrkpath); fi
 	cd $(wrkpath);make
 	cp $(wrkpath)/wrk ./benchmark/wrk
 
-$(wrk2path)/wrk:
-	git clone https://github.com/giltene/wrk2.git $(wrk2path)
+benchmark/wrk2:
+	if [ ! -d "$(wrk2path)" ]; then git clone https://github.com/giltene/wrk2.git $(wrk2path); fi
 	cd $(wrk2path);make
 	cp $(wrk2path)/wrk ./benchmark/wrk2
 
-libs: $(glidepath)/glide $(redispath)/src/redis-benchmark $(wrkpath)/wrk $(wrk2path)/wrk
+deps: $(glidepath)/glide $(redispath)/src/redis-benchmark benchmark/wrk benchmark/wrk2
 	$(glidepath)/glide install
-
-deps: libs
