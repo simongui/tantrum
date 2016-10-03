@@ -17,3 +17,6 @@ import:
   version: ~20160617.0.0
 - package: github.com/garyburd/redigo
   version: ~1.0.0
+- package: gopkg.in/redis.v4
+  version: ~4.2.1
+- package: gopkg.in/bsm/ratelimit.v1

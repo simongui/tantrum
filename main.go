@@ -23,6 +23,7 @@ import (
 	"github.com/gonum/plot/plotutil"
 	"github.com/gonum/plot/vg"
 	"github.com/gonum/plot/vg/draw"
+	goredis "gopkg.in/redis.v4"
 )
 
 type result struct {
@@ -56,6 +57,8 @@ func main() {
 	kingpin.Parse()
 
 	pools = make(map[int64]*redis.Pool)
+	clients = make(map[int64]*goredis.Client)
+	pipelines = make(map[int64]*goredis.Pipeline)
 
 	startHTTPServers()
 	time.Sleep(time.Duration(*sleep) * time.Second)

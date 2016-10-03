@@ -1,5 +1,5 @@
-hash: ca5acded62b6138beb77a6a3dc61a2c7104b91884a5c925b9013fd1887de769a
-updated: 2016-09-26T07:41:34.37908461-04:00
+hash: 8793477ebb44d55142acfedfc6739c8083b0292d4c04cfd981675df6b1c65b73
+updated: 2016-10-02T21:38:48.935901005-04:00
 imports:
 - name: bitbucket.org/zombiezen/gopdf
   version: 1c63dc69751bc45441c2ce1f56b631c55294b4d5
@@ -19,6 +19,9 @@ imports:
   version: 132b780dc8316aac23570f843a4deee9803358fb
 - name: github.com/garyburd/redigo
   version: 8873b2f1995f59d4bcdd2b0dc9858e2cb9bf0c13
+  subpackages:
+  - internal
+  - redis
 - name: github.com/gizak/termui
   version: 23b25db08316d51303b96a02edebae1649136565
 - name: github.com/golang/freetype
@@ -78,4 +81,15 @@ imports:
   - tiff/lzw
 - name: gopkg.in/alecthomas/kingpin.v2
   version: e9044be3ab2a8e11d4e1f418d12f0790d57e8d70
+- name: gopkg.in/bsm/ratelimit.v1
+  version: db14e161995a5177acef654cb0dd785e8ee8bc22
+- name: gopkg.in/redis.v4
+  version: 5a272d03b960a72c61e5025a7d6e8da5d8815442
+  subpackages:
+  - internal
+  - internal/consistenthash
+  - internal/errors
+  - internal/hashtag
+  - internal/pool
+  - internal/proto
 testImports: []
