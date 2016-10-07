@@ -2,5 +2,5 @@ sudo: false
 
 language: go
 script:
-  - make libs
+  - make deps
   - make
