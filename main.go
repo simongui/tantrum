@@ -7,21 +7,18 @@ import (
 	"image/color"
 	"math"
 	"os/exec"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/disintegration/imaging"
 	"github.com/dlion/goImgur"
-	"github.com/garyburd/redigo/redis"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/gonum/plot"
 	"github.com/gonum/plot/plotter"
 	"github.com/gonum/plot/plotutil"
 	"github.com/gonum/plot/vg"
-	"github.com/gonum/plot/vg/draw"
 )
 
 type result struct {
@@ -32,41 +29,25 @@ type result struct {
 }
 
 var (
-	verbose = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
-	hosts   = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Required().String()
-	image   = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.jpg").String()
-	// requests    = kingpin.Flag("requests", "Number of total requests.").Default("10000000").Uint32()
-	connections = kingpin.Flag("connections", "Number of Redis client connections.").Default("128").Uint16()
-	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Default("1").Uint16()
+	verbose     = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
+	hosts       = kingpin.Flag("hosts", "Host addresses for the target Redis servers to benchmark against.").Short('h').Required().String()
+	image       = kingpin.Flag("image", "Where to store the results graph in PNG format.").Default("results.jpg").Short('i').String()
+	requests    = kingpin.Flag("requests", "Number of total requests.").Short('r').Default("10000000").Uint32()
+	connections = kingpin.Flag("connections", "Number of Redis client connections.").Short('c').Default("128").Uint16()
+	pipelined   = kingpin.Flag("pipelined", "Number of pipelined requests per connection.").Short('p').Default("128").Uint16()
+	duration    = kingpin.Flag("duration", "Duration in seconds to run the benchmarks.").Default("10").Uint16()
 	sleep       = kingpin.Flag("sleep", "Duration in seconds to sleep between benchmarks.").Default("0").Uint16()
-	duration    = kingpin.Flag("duration", "Duration in seconds to run benchmark stages.").Default("10").Uint16()
-
-	shapes = []draw.GlyphDrawer{
-		draw.SquareGlyph{},
-		draw.CircleGlyph{},
-		draw.CrossGlyph{},
-		draw.PyramidGlyph{},
-	}
-
-	httpBasePort = 8080
 )
 
 func main() {
 	kingpin.Parse()
 
-	pools = make(map[int64]*redis.Pool)
-
-	startHTTPServers()
-	time.Sleep(time.Duration(*sleep) * time.Second)
-	benchmark()
-}
-
-func startHTTPServers() {
+	var results []result
 	addresses := strings.Split(*hosts, ",")
-	httpPort := httpBasePort
 
-	for _, address := range addresses {
-		httpPort++
+	startingTime := time.Now()
+
+	for index, address := range addresses {
 		var offset = 0
 		var name string
 
@@ -80,69 +61,26 @@ func startHTTPServers() {
 		host := hostParts[0+offset]
 		port := hostParts[1+offset]
 
-		listenAddress := fmt.Sprintf("%s:%s", host, port)
 		if *verbose {
-			fmt.Printf("starting http server for %s listening on %d\n", name, httpPort)
+			fmt.Printf("Running benchmark against %s on %s:%s\n", name, host, port)
 		}
-		go startHTTPServer(listenAddress, int(*connections), httpPort)
-	}
-}
 
-func benchmark() {
-	start := time.Now()
-
-	httpPort := httpBasePort
-	var results []*result
-	addresses := strings.Split(*hosts, ",")
-
-	for index, address := range addresses {
-		var offset = 0
-		var name string
-		httpPort++
-
-		hostParts := strings.Split(address, ":")
-		if len(hostParts) > 2 {
-			offset = 1
-			name = hostParts[0]
-		} else {
-			name = hostParts[0] + " " + hostParts[1]
-		}
-		host := hostParts[0+offset]
-		port, _ := strconv.ParseInt(hostParts[1+offset], 10, 32)
-
-		r := &result{}
-		r.name = name
-
-		throughputOutput, err := runWrkThroughputBenchmark(name, host, int(port), httpPort)
+		output, err := runBenchmark(host, port)
 		if err != nil {
 			fmt.Println(err)
-			fmt.Println(throughputOutput)
 		} else {
 			if *verbose {
-				fmt.Println(string(throughputOutput))
-			}
-			parseWrkThroughputResults(name, throughputOutput, r)
-
-		}
-
-		latencyOutput, err := runWrkLatencyBenchmark(name, host, int(port), httpPort, int(r.throughput))
-		if err != nil {
-			fmt.Println(err)
-			fmt.Println(latencyOutput)
-		} else {
-			if *verbose {
-				fmt.Println(string(latencyOutput))
+				fmt.Println(string(output))
 			}
 
-			parseWrkLatencyResults(name, latencyOutput, r)
+			r := parseResults(name, output)
 			results = append(results, r)
 
-			if len(addresses) > 1 && index < len(addresses)-1 && *sleep > 0 {
+			if len(addresses) > 1 && index < len(addresses)-1 {
 				time.Sleep(time.Duration(*sleep) * time.Second)
 			}
 		}
 	}
-	elapsed := time.Since(start)
 
 	generateLatencyDistributionGraph(results)
 	generateThroughputGraph(results)
@@ -153,131 +91,139 @@ func benchmark() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Printf("%d/%d took %s: ![](%s)\n", *connections, *pipelined, elapsed, url)
+
+	duration := time.Now().Sub(startingTime)
+	fmt.Printf("![%s\t%d/%d](%s)\n", duration, *connections, *pipelined, url)
 }
 
-func runWrkThroughputBenchmark(name string, host string, redisPort int, httpPort int) (string, error) {
-	connectionsArg := strconv.FormatUint(uint64(*connections), 10)
-	pipelinedArg := strconv.FormatUint(uint64(*pipelined), 10)
-
-	if *verbose {
-		fmt.Printf("Running benchmark for %s on %s:%d\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, redisPort, connectionsArg, pipelinedArg)
-	}
-
+func runBenchmark(host string, port string) (string, error) {
 	cmd := exec.Command(
-		"./benchmark/wrk",
-		"--latency",
-		"--script",
-		"./benchmark/set_random.lua",
-		"--threads",
-		"4",
-		"--connections",
-		connectionsArg,
-		"--duration",
-		fmt.Sprintf("%ds", *duration),
-		fmt.Sprintf("http://localhost:%d", httpPort),
-		"--",
-		pipelinedArg)
+		"./redis-benchmark",
+		"-h",
+		host,
+		"-p",
+		port,
+		"-t",
+		"set",
+		"-n",
+		strconv.FormatUint(uint64(*requests), 10),
+		"-c",
+		strconv.FormatUint(uint64(*connections), 10),
+		"-P",
+		strconv.FormatUint(uint64(*pipelined), 10),
+		"-D",
+		strconv.FormatUint(uint64(*duration), 10))
 
 	output, err := cmd.Output()
 	return string(output), err
 }
 
-func runWrkLatencyBenchmark(name string, host string, redisPort int, httpPort int, rate int) (string, error) {
-	connectionsArg := strconv.FormatUint(uint64(*connections), 10)
-	pipelinedArg := strconv.FormatUint(uint64(*pipelined), 10)
-
-	if *verbose {
-		fmt.Printf("Running benchmark for %s on %s:%d\n\tConnections:\t%s\n\tPipelined:\t%s\n", name, host, redisPort, connectionsArg, pipelinedArg)
-	}
-
-	cmd := exec.Command(
-		"./benchmark/wrk2",
-		"--latency",
-		"--script",
-		"./benchmark/set_random.lua",
-		"--threads",
-		"4",
-		"--connections",
-		connectionsArg,
-		"--duration",
-		fmt.Sprintf("%ds", *duration),
-		"--rate",
-		strconv.Itoa(rate),
-		fmt.Sprintf("http://localhost:%d", httpPort),
-		"--",
-		pipelinedArg)
-
-	output, err := cmd.Output()
-	return string(output), err
-}
-
-func parseWrkThroughputResults(name string, results string, r *result) {
-	lines := strings.Split(results, "\n")
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		if strings.HasPrefix(line, "Requests/sec:") {
-			throughputStringParts := strings.Fields(lines[i])
-			throughput, _ := strconv.ParseFloat(throughputStringParts[1], 64)
-			r.throughput = throughput
-			break
-		}
-	}
-}
-
-func parseWrkLatencyResults(name string, results string, r *result) {
-	var lastResult float64
+func parseResults(name string, results string) result {
 	startResults := false
 	endResults := false
+	var lastResult float64
 
-	entries := make(map[float64]float64)
 	lines := strings.Split(results, "\n")
+	points := make(plotter.XYs, 0)
+	var r result
 
-	for i := 0; i < len(lines); i++ {
+	for i := 0; i < len(lines)-4; i++ {
 		line := lines[i]
-		if strings.HasPrefix(line, " 50.") && startResults == false {
+		if line == "" && startResults == false {
 			startResults = true
 		} else if line == "" && startResults == true {
 			endResults = true
-			break
 		}
 
-		if startResults && !endResults {
-			lineParts := strings.Fields(line)
+		if startResults && !endResults && len(line) > 0 {
+			lineParts := strings.Split(line, "<=")
 			percentileString := strings.Split(lineParts[0], "%")[0]
-			latencyString := strings.Split(lineParts[1], "ms")[0]
+			latencyStringParts := strings.Split(lineParts[1], " ")
 
 			percentile, _ := strconv.ParseFloat(percentileString, 64)
-			latency, _ := strconv.ParseFloat(latencyString, 64)
-
+			latency, _ := strconv.ParseFloat(latencyStringParts[1], 64)
+			latency = latency / 1000.00
 			lastResult = latency
 
-			if percentile >= 1 && latency >= 1 {
-				entries[percentile] = latency
+			if percentile > 0.0 && latency > 0.0 {
+				points = append(points, struct{ X, Y float64 }{percentile, latency})
 			}
 		}
 	}
 
-	points := make(plotter.XYs, len(entries))
-
-	var keys []float64
-	for k := range entries {
-		keys = append(keys, k)
-	}
-	sort.Float64s(keys)
-
-	for i, k := range keys {
-		points[i].X = k
-		points[i].Y = entries[k]
-	}
+	// nameString := fmt.Sprintf("%s max: %s at %s", name, lines[len(lines)-5], lines[len(lines)-4])
 
 	r.name = name
 	r.latencyPoints = points
+	throughputStringParts := strings.Split(lines[len(lines)-4], " ")
+	r.throughput, _ = strconv.ParseFloat(throughputStringParts[0], 64)
 	r.max = lastResult
+
+	return r
 }
 
-func generateThroughputGraph(results []*result) {
+func generateLatencyDistributionGraph(results []result) {
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+	p.Title.Text = fmt.Sprintf("connections: %d, pipelined: %d", *connections, *pipelined)
+	p.Legend.Top = true
+	p.Legend.Left = true
+	// p.BackgroundColor = color.Black
+	// p.Legend.TextStyle.Color = color.White
+	// p.X.Label.Color = color.White
+	// p.Y.Label.Color = color.White
+	// p.X.Color = color.White
+	// p.Y.Color = color.White
+	// p.X.Tick.Color = color.White
+	// p.Y.Tick.Color = color.White
+	// p.X.Tick.Label.Color = color.White
+	// p.Y.Tick.Label.Color = color.White
+
+	p.X.Label.Text = "percentile"
+	p.Y.Label.Text = "latency (milliseconds)"
+	// Use a custom tick marker interface implementation with the Ticks function,
+	// that computes the default tick marks and re-labels the major ticks with commas.
+	// p.Y.Tick.Marker = commaTicks{}
+
+	// p.X.Scale = plot.LogScale{}
+	// p.Y.Scale = plot.LogScale{}
+	p.X.Min = 0.0
+	p.X.Max = 100.0
+	p.X.Scale = ReverseLogScale{}
+
+	// Draw a grid behind the data
+	p.Add(plotter.NewGrid())
+
+	for index, r := range results {
+		// Make a line plotter with points and set its style.
+		var lpLine *plotter.Line
+		// var lpPoints *plotter.Scatter
+		// lpLine, lpPoints, err = plotter.NewLinePoints(r.latencyPoints)
+		lpLine, _, err = plotter.NewLinePoints(r.latencyPoints)
+		if err != nil {
+			panic(err)
+		}
+		lpLine.Color = plotutil.Color(index)
+		// lpLine.LineStyle.Dashes = []vg.Length{vg.Points(5), vg.Points(5)}
+
+		// lpPoints.Shape = shapes[index]
+		// lpPoints.Color = colors[index]
+
+		// Add the plotters to the plot, with a legend entry for each
+		p.Add(lpLine)
+		p.Legend.Add(r.name, lpLine)
+
+	}
+
+	// Save the plot to a PNG file.
+	if err = p.Save(8*vg.Inch, 4*vg.Inch, "results_latency.png"); err != nil {
+		panic(err)
+	}
+}
+
+func generateThroughputGraph(results []result) {
 	p, err := plot.New()
 	if err != nil {
 		panic(err)
@@ -312,7 +258,7 @@ func generateThroughputGraph(results []*result) {
 	}
 }
 
-func generateMaxLatencyGraph(results []*result) {
+func generateMaxLatencyGraph(results []result) {
 	p, err := plot.New()
 	if err != nil {
 		panic(err)
@@ -343,55 +289,6 @@ func generateMaxLatencyGraph(results []*result) {
 	p.NominalX("")
 
 	if err = p.Save(3.5*vg.Inch, 4*vg.Inch, "results_max.png"); err != nil {
-		panic(err)
-	}
-}
-
-func generateLatencyDistributionGraph(results []*result) {
-	p, err := plot.New()
-	if err != nil {
-		panic(err)
-	}
-	p.Title.Text = fmt.Sprintf("connections: %d, pipelined: %d", *connections, *pipelined)
-	p.BackgroundColor = color.White
-	p.Legend.Top = true
-	p.Legend.Left = true
-
-	p.X.Label.Text = "percentile"
-	p.Y.Label.Text = "latency (milliseconds)"
-	// Use a custom tick marker interface implementation with the Ticks function,
-	// that computes the default tick marks and re-labels the major ticks with commas.
-	// p.Y.Tick.Marker = commaTicks{}
-
-	// p.X.Scale = plot.LogScale{}
-	// p.Y.Scale = plot.LogScale{}
-
-	// Draw a grid behind the data
-	p.Add(plotter.NewGrid())
-
-	for index, r := range results {
-		// Make a line plotter with points and set its style.
-		var lpLine *plotter.Line
-		var lpPoints *plotter.Scatter
-		lpLine, lpPoints, err = plotter.NewLinePoints(r.latencyPoints)
-		//lpLine, _, err = plotter.NewLinePoints(r.latencyPoints)
-		if err != nil {
-			panic(err)
-		}
-
-		//lpLine.LineStyle.Dashes = []vg.Length{vg.Points(5), vg.Points(5)}
-		lpLine.Color = plotutil.Color(index)
-		lpPoints.Shape = plotutil.Shape(index)
-		// lpPoints.Color = plotutil.Color(index)
-		// lpPoints.Shape = plotutil.Shape(index)
-
-		// Add the plotters to the plot, with a legend entry for each
-		p.Add(lpLine, lpPoints)
-		p.Legend.Add(r.name, lpLine, lpPoints)
-	}
-
-	// Save the plot to a PNG file.
-	if err = p.Save(8*vg.Inch, 4*vg.Inch, "results_latency.png"); err != nil {
 		panic(err)
 	}
 }
@@ -496,4 +393,35 @@ func combineImages() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// CustomLogScale can be used as the value of an Axis.Scale function to
+// set the axis to a log scale.
+type CustomLogScale struct{}
+
+// var _ Normalizer = CustomLogScale{}
+
+// Normalize returns the fractional logarithmic distance of
+// x between min and max.
+func (CustomLogScale) Normalize(min, max, x float64) float64 {
+	logMin := logscale(min)
+	return (logscale(x) - logMin) / (logscale(max) - logMin)
+}
+
+func logscale(x float64) float64 {
+	if x <= 0 {
+		panic("Values must be greater than 0 for a log scale.")
+	}
+	return math.Log(x)
+}
+
+// ReverseLogScale can be used as the value of an Axis.Scale function to
+// set the axis to a log scale.
+type ReverseLogScale struct{}
+
+// Normalize returns the fractional logarithmic distance of
+// x between min and max.
+func (ReverseLogScale) Normalize(min, max, x float64) float64 {
+	logMin := math.Log(min)
+	return 1 - ((math.Log(max-x) - logMin) / (math.Log(max) - logMin))
 }

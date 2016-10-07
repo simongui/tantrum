@@ -1,7 +1,7 @@
 project = tantrum
 projectpath = ${PWD}
 glidepath = ${PWD}/vendor/github.com/Masterminds/glide
-redispath = ${PWD}/vendor/github.com/antirez/redis
+redispath = ${PWD}/vendor/github.com/simongui/redis
 wrkpath = ${PWD}/vendor/github.com/wg/wrk
 wrk2path = ${PWD}/vendor/github.com/giltene/wrk2
 
@@ -20,7 +20,7 @@ $(glidepath)/glide:
 	cp $(glidepath)/glide .
 
 $(redispath)/src/redis-benchmark:
-	git clone https://github.com/antirez/redis.git $(redispath)
+	git clone https://github.com/simongui/redis.git $(redispath)
 	cd $(redispath);make
 	cp $(redispath)/src/redis-benchmark .
 
